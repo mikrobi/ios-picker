@@ -77,14 +77,6 @@
 + (NSString *)JSONEncodeObject:(id)object error:(NSError **)error;
 
 /**
-   Returns a JSON string representing a session with an API key and,
-   optionally, a mimetype or array of mimetypes.
-
-   @returns A NSString
- */
-+ (NSString *)JSONSessionStringForAPIKey:(NSString *)APIKey andMimetypes:(id)mimetypes;
-
-/**
     Performs a copy in chunks from a given ALAssetRepresentation into a local URL.
 
     @notes
@@ -103,6 +95,32 @@
    @returns The file size
  */
 + (size_t)fileSizeForLocalURL:(NSURL *)url;
+
+/**
+   Generates a policy given a handle (optional), expiry interval (required),
+   and call options (optional).
+
+   @returns A NSString with the policy
+ */
++ (NSString *)policyForHandle:(NSString *)handle
+               expiryInterval:(NSTimeInterval)expiryInterval
+               andCallOptions:(NSArray *)callOptions;
+
+/**
+   Returns a signature given a policy and a secret key.
+
+   @returns A NSString with the policy signature
+ */
++ (NSString *)signPolicy:(NSString *)policy
+                usingKey:(NSString *)key;
+
+/**
+   Provided that security is enabled, appends policy and signature parameters to the input
+   NSString representing the FilePicker resource; otherwise it simply returns the input given.
+
+    @returns A NSString representing a FilePicker resource (optionally with security parameters)
+ */
++ (NSString *)filePickerLocationWithOptionalSecurityFor:(NSString *)filePickerLocation;
 
 /**
    Returns an image with corrected rotation.

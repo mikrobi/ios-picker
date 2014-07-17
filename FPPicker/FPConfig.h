@@ -23,6 +23,7 @@
 
 #define fpCOOKIES                   [[FPConfig sharedInstance] cookies]
 #define fpAPIKEY                    [[FPConfig sharedInstance] APIKey]
+#define fpAPPSECRETKEY              [[FPConfig sharedInstance] appSecretKey]
 
 #define fpWindowSize                CGSizeMake(320, 480)
 #define fpCellIdentifier            @"Filepicker_Cell"
@@ -38,11 +39,15 @@
 @interface FPConfig : NSObject
 
 @property (nonatomic, strong) NSString *APIKey;
+@property (nonatomic, strong) NSString *appSecretKey;
 @property (nonatomic, strong) NSURL *baseURL;
+@property (nonatomic, strong) NSString *storeAccess;
+@property (nonatomic, strong) NSString *storeLocation;
+@property (nonatomic, strong) NSString *storePath;
+@property (nonatomic, strong) NSString *storeContainer;
 
 + (instancetype)sharedInstance;
 - (NSArray *)cookies;
-
 - (NSString *)APIKeyContentsFromFile;
 
 @end

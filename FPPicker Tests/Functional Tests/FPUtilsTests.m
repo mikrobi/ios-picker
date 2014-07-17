@@ -145,35 +145,41 @@
                  @"Should represent a nil object");
 }
 
-- (void)testJSONSessionStringForAPIKeyAndMimetypes
+- (void)testFilePickerLocationWithOptionalSecurityForWithEnabledSecurity
 {
-    NSString *emptyJSON = [FPUtils JSONSessionStringForAPIKey:nil
-                                                 andMimetypes:nil];
+    NSString *inputFileLocation = @"http://www.local-fp.com/api/file/0tb5XFvXQSzxWaTdCgIA";
 
-    XCTAssertEqualObjects(emptyJSON,
-                          @"{\"app\":{}}",
-                          @"Should represent an empty session");
+    id configMock = OCMPartialMock([FPConfig sharedInstance]);
 
-    NSString *JSONWithAPIKey = [FPUtils JSONSessionStringForAPIKey:@"MY-API-KEY"
-                                                      andMimetypes:nil];
+    OCMStub([configMock appSecretKey]).andReturn(@"MY_OTHER_SECRET_APP_KEY");
 
-    XCTAssertEqualObjects(JSONWithAPIKey,
-                          @"{\"app\":{\"apikey\":\"MY-API-KEY\"}}",
-                          @"Should contain an 'apikey' entry");
+    NSString *outputFileLocation = [FPUtils filePickerLocationWithOptionalSecurityFor:inputFileLocation];
 
-    NSString *JSONWithAPIKeyAndMimetype = [FPUtils JSONSessionStringForAPIKey:@"MY-API-KEY"
-                                                                 andMimetypes:@"image/png"];
+    XCTAssert([outputFileLocation hasPrefix:inputFileLocation],
+              @"input should be contained in output");
 
-    XCTAssertEqualObjects(JSONWithAPIKeyAndMimetype,
-                          @"{\"app\":{\"apikey\":\"MY-API-KEY\"},\"mimetypes\":\"image\\/png\"}",
-                          @"Should contain both an 'apikey' and a 'mimetypes' entry");
+    XCTAssertNotEqual([outputFileLocation rangeOfString:@"policy="].location,
+                      NSNotFound,
+                      @"policy should be a parameter");
 
-    NSString *JSONWithAPIKeyAndMimetypes = [FPUtils JSONSessionStringForAPIKey:@"MY-API-KEY"
-                                                                  andMimetypes:@[@"image/png", @"image/jpeg"]];
+    XCTAssertNotEqual([outputFileLocation rangeOfString:@"signature="].location,
+                      NSNotFound,
+                      @"signature should be a parameter");
+}
 
-    XCTAssertEqualObjects(JSONWithAPIKeyAndMimetypes,
-                          @"{\"app\":{\"apikey\":\"MY-API-KEY\"},\"mimetypes\":[\"image\\/png\",\"image\\/jpeg\"]}",
-                          @"Should contain both an 'apikey' and a 'mimetypes' entry");
+- (void)testFilePickerLocationWithOptionalSecurityForWithDisabledSecurity
+{
+    NSString *inputFileLocation = @"http://www.local-fp.com/api/file/0tb5XFvXQSzxWaTdCgIA";
+
+    id configMock = OCMPartialMock([FPConfig sharedInstance]);
+
+    OCMStub([configMock appSecretKey]).andReturn(nil);
+
+    NSString *outputFileLocation = [FPUtils filePickerLocationWithOptionalSecurityFor:inputFileLocation];
+
+    XCTAssertEqualObjects(outputFileLocation,
+                          inputFileLocation,
+                          @"output should exactly match input");
 }
 
 @end

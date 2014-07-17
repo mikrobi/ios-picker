@@ -9,7 +9,9 @@
 #import "FPLibrary.h"
 #import "FPInternalHeaders.h"
 #import "FPUtils.h"
-#import "FPMultipartUpload.h"
+#import "FPSession+ConvenienceMethods.h"
+#import "FPSinglepartUploader.h"
+#import "FPMultipartUploader.h"
 
 @implementation FPLibrary
 
@@ -51,7 +53,8 @@
     };
 
     FPUploadAssetFailureBlock failureBlock = ^(NSError *error, id JSON) {
-        NSLog(@"FAILURE %@ %@", error, JSON);
+        DLog(@"File upload failed with %@, response was: %@", error, JSON);
+
         failure(error, JSON, tempURL);
     };
 
@@ -79,7 +82,8 @@
     };
 
     FPUploadAssetFailureBlock failureBlock = ^(NSError *error, id JSON) {
-        NSLog(@"FAILURE %@ %@", error, JSON);
+        DLog(@"File upload failed with %@, response was: %@", error, JSON);
+
         failure(error, JSON, url);
     };
 
@@ -105,17 +109,15 @@
 
     CFStringRef utiToConvert = (__bridge CFStringRef)representation.UTI;
 
-    NSString *mimetype = (__bridge_transfer NSString*)UTTypeCopyPreferredTagWithClass(utiToConvert,
-                                                                                      kUTTagClassMIMEType);
+    NSString *mimetype = (__bridge_transfer NSString *)UTTypeCopyPreferredTagWithClass(utiToConvert,
+                                                                                       kUTTagClassMIMEType);
 
     NSURL *tempURL = [FPUtils genRandTemporaryURLWithFileLength:20];
-
-    NSLog(@"mimetype: %@", mimetype);
 
     if (([mimetype isEqualToString:@"video/quicktime"]) ||
         ([mimetype isEqualToString:@"image/png"]))
     {
-        NSLog(@"Copying %@", mimetype);
+        DLog(@"Copying %@", mimetype);
 
         [FPUtils copyAssetRepresentation:representation
                             intoLocalURL:tempURL];
@@ -134,7 +136,7 @@
             2. Compressing an smaller representation of the image.
          */
 
-        NSLog(@"Compressing and copying JPEG");
+        DLog(@"Compressing and copying JPEG");
 
         UIImage *image = [UIImage imageWithCGImage:representation.fullResolutionImage
                                              scale:representation.scale
@@ -151,7 +153,8 @@
     };
 
     FPUploadAssetFailureBlock failureBlock = ^(NSError *error, id JSON) {
-        NSLog(@"FAILURE %@ %@", error, JSON);
+        DLog(@"File upload failed with %@, response was: %@", error, JSON);
+
         failure(error, JSON, tempURL);
     };
 
@@ -175,8 +178,6 @@
            failure:(FPUploadAssetFailureBlock)failure
           progress:(FPUploadAssetProgressBlock)progress
 {
-    NSLog(@"Mimetype: %@", mimetype);
-
     NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[FPUtils genRandStringLength:20]];
 
     NSURL *tempURL = [NSURL fileURLWithPath:tempPath
@@ -197,7 +198,8 @@
     };
 
     FPUploadAssetFailureBlock failureBlock = ^(NSError *error, id JSON) {
-        NSLog(@"FAILURE %@ %@", error, JSON);
+        DLog(@"File upload failed with %@, response was: %@", error, JSON);
+
         failure(error, JSON);
     };
 
@@ -219,8 +221,6 @@
               failure:(FPUploadAssetFailureBlock)failure
              progress:(FPUploadAssetProgressBlock)progress
 {
-    NSLog(@"Mimetype: %@", mimetype);
-
     FPUploadAssetSuccessBlock successBlock = ^(id JSON) {
         NSString *filepickerURL = JSON[@"data"][0][@"url"];
 
@@ -232,8 +232,10 @@
                                    failure:failure];
     };
 
-    FPUploadAssetFailureBlock failureBlock = ^(NSError *error, id JSON) {
-        NSLog(@"FAILURE %@ %@", error, JSON);
+    FPUploadAssetFailureBlock failureBlock = ^(NSError *error,
+                                               id JSON) {
+        DLog(@"File upload failed with %@, response was: %@", error, JSON);
+
         failure(error, JSON);
     };
 
@@ -255,22 +257,26 @@
                         success:(FPUploadAssetSuccessBlock)success
                         failure:(FPUploadAssetFailureBlock)failure
 {
-    NSString *js_sessionString = [FPUtils JSONSessionStringForAPIKey:fpAPIKEY
-                                                        andMimetypes:mimetype];
+    FPSession *fpSession = [FPSession new];
+
+    fpSession.APIKey = fpAPIKEY;
+    fpSession.mimetypes = mimetype;
 
     NSDictionary *params = @{
-        @"js_session":js_sessionString,
-        @"url":fileLocation
+        @"js_session":[fpSession JSONSessionString],
+        @"url":[FPUtils filePickerLocationWithOptionalSecurityFor:fileLocation]
     };
 
     NSString *savePath = [NSString stringWithFormat:@"/api/path%@", [FPUtils urlEncodeString:saveLocation]];
 
-    NSLog(@"Saving %@", savePath);
+    DLog(@"Saving %@ (params: %@)", savePath, params);
 
     AFRequestOperationSuccessBlock successOperationBlock = ^(AFHTTPRequestOperation *operation,
                                                              id responseObject) {
         if (responseObject[@"url"])
         {
+            DLog(@"Success with response %@", responseObject);
+
             success(responseObject);
         }
         else
@@ -284,6 +290,8 @@
 
     AFRequestOperationFailureBlock failureOperationBlock = ^(AFHTTPRequestOperation *operation,
                                                              NSError *error) {
+        DLog(@"File upload failed with %@", error);
+
         failure(error, nil);
     };
 
@@ -303,7 +311,7 @@
 {
     if (!shouldUpload)
     {
-        NSLog(@"Not Uploading");
+        DLog(@"Not uploading");
 
         NSError *error = [NSError errorWithDomain:@"io.filepicker"
                                              code:200
@@ -313,104 +321,31 @@
         return;
     }
 
+    FPUploader *fileUploader;
     size_t fileSize = [FPUtils fileSizeForLocalURL:localURL];
 
     if (fileSize <= fpMaxChunkSize)
     {
-        NSLog(@"Uploading singlepart");
+        DLog(@"Uploading singlepart");
 
-        [FPLibrary singlepartUploadWithLocalURL:localURL
-                                          named:filename
-                                     ofMimetype:mimetype
-                                        success:success
-                                        failure:failure
-                                       progress:progress];
+        fileUploader = [[FPSinglepartUploader alloc] initWithLocalURL:localURL
+                                                             filename:filename
+                                                          andMimetype:mimetype];
     }
     else
     {
-        NSLog(@"Uploading Multipart");
+        DLog(@"Uploading multipart");
 
-        [FPLibrary multipartUploadWithLocalURL:localURL
-                                         named:filename
-                                    ofMimetype:mimetype
-                                       success:success
-                                       failure:failure
-                                      progress:progress];
+        fileUploader = [[FPMultipartUploader alloc] initWithLocalURL:localURL
+                                                            filename:filename
+                                                         andMimetype:mimetype];
     }
-}
 
-+ (void)singlepartUploadWithLocalURL:(NSURL *)localURL
-                               named:(NSString *)filename
-                          ofMimetype:(NSString *)mimetype
-                             success:(FPUploadAssetSuccessBlock)success
-                             failure:(FPUploadAssetFailureBlock)failure
-                            progress:(FPUploadAssetProgressBlock)progress
-{
-    NSDictionary *params = @{
-        @"js_session":[FPUtils JSONSessionStringForAPIKey:fpAPIKEY
-                                             andMimetypes:nil]
-    };
+    fileUploader.successBlock = success;
+    fileUploader.failureBlock = failure;
+    fileUploader.progressBlock = progress;
 
-    AFConstructingBodyBlock constructingBodyBlock = ^(id <AFMultipartFormData>formData) {
-        NSData *filedata = [NSData dataWithContentsOfURL:localURL];
-
-        [formData appendPartWithFileData:filedata
-                                    name:@"fileUpload"
-                                fileName:filename
-                                mimeType:mimetype];
-    };
-
-    AFRequestOperationSuccessBlock successOperationBlock = ^(AFHTTPRequestOperation *operation,
-                                                             id responseObject) {
-        if ([@"ok" isEqual : responseObject[@"result"]])
-        {
-            success(responseObject);
-        }
-        else
-        {
-            failure([[NSError alloc] initWithDomain:@"FPPicker"
-                                               code:0
-                                           userInfo:nil], responseObject);
-        }
-    };
-
-    AFRequestOperationFailureBlock failureOperationBlock = ^(AFHTTPRequestOperation *operation,
-                                                             NSError *error) {
-        failure(error, nil);
-    };
-
-    AFHTTPRequestOperation *operation = [[FPAPIClient sharedClient] POST:@"/api/path/computer/"
-                                                              parameters:params
-                                               constructingBodyWithBlock:constructingBodyBlock
-                                                                 success:successOperationBlock
-                                                                 failure:failureOperationBlock];
-
-    [operation setUploadProgressBlock: ^(NSUInteger bytesWritten,
-                                         long long totalBytesWritten,
-                                         long long totalBytesExpectedToWrite) {
-        if (progress && totalBytesExpectedToWrite > 0)
-        {
-            progress(1.0f * totalBytesWritten / totalBytesExpectedToWrite);
-        }
-    }];
-}
-
-+ (void)multipartUploadWithLocalURL:(NSURL *)localURL
-                              named:(NSString *)filename
-                         ofMimetype:(NSString *)mimetype
-                            success:(FPUploadAssetSuccessBlock)success
-                            failure:(FPUploadAssetFailureBlock)failure
-                           progress:(FPUploadAssetProgressBlock)progress
-{
-    FPMultipartUpload *multipartUpload = [[FPMultipartUpload alloc] initWithLocalURL:localURL
-                                                                            filename:filename
-                                                                         andMimetype:mimetype];
-
-    multipartUpload.successBlock = success;
-    multipartUpload.failureBlock = failure;
-    multipartUpload.progressBlock = progress;
-
-    [multipartUpload upload];
+    [fileUploader upload];
 }
 
 @end

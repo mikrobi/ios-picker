@@ -11,6 +11,8 @@
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <UIKit/UIKit.h>
 #import <AssetsLibrary/AssetsLibrary.h>
+#import <CommonCrypto/CommonHMAC.h>
+#import "NSData+FPHexString.h"
 
 @implementation FPUtils
 
@@ -129,26 +131,6 @@
     return nil;
 }
 
-+ (NSString *)JSONSessionStringForAPIKey:(NSString *)APIKey andMimetypes:(id)mimetypes
-{
-    NSError *error;
-
-    NSMutableDictionary *sessionObject = [@{@"app":[@{} mutableCopy]} mutableCopy];
-
-    if (APIKey)
-    {
-        sessionObject[@"app"][@"apikey"] = APIKey;
-    }
-
-    if (mimetypes)
-    {
-        sessionObject[@"mimetypes"] = mimetypes;
-    }
-
-    return [FPUtils JSONEncodeObject:sessionObject
-                               error:&error];
-}
-
 + (BOOL)copyAssetRepresentation:(ALAssetRepresentation *)representation
                    intoLocalURL:(NSURL *)localURL
 {
@@ -242,6 +224,96 @@
     }
 
     return fileSizeValue.unsignedLongValue;
+}
+
++ (NSString *)policyForHandle:(NSString *)handle
+               expiryInterval:(NSTimeInterval)expiryInterval
+               andCallOptions:(NSArray *)callOptions
+{
+    NSAssert(expiryInterval, @"expiryInterval is a required argument");
+
+    NSMutableDictionary *policyDictionary = [NSMutableDictionary dictionary];
+    NSDate *expiryDate = [NSDate dateWithTimeIntervalSinceNow:expiryInterval];
+
+    policyDictionary[@"expiry"] = @((time_t)[expiryDate timeIntervalSince1970]);
+
+    if (callOptions)
+    {
+        policyDictionary[@"call"] = callOptions;
+    }
+
+    if (handle)
+    {
+        policyDictionary[@"handle"] = handle;
+    }
+
+    NSError *error;
+    NSString *JSONString = [self JSONEncodeObject:policyDictionary
+                                            error:&error];
+
+    if (error)
+    {
+        NSLog(@"Error JSON encoding object (%@): %@",
+              policyDictionary,
+              error);
+
+        return nil;
+    }
+
+    NSData *JSONData = [JSONString dataUsingEncoding:NSUTF8StringEncoding];
+    NSString *base64EncodedPolicy = [JSONData base64Encoding];
+
+    return base64EncodedPolicy;
+}
+
++ (NSString *)signPolicy:(NSString *)policy
+                usingKey:(NSString *)key
+{
+    const char *cKey  = [key cStringUsingEncoding:NSASCIIStringEncoding];
+    const char *cData = [policy cStringUsingEncoding:NSASCIIStringEncoding];
+
+    unsigned char cHMAC[CC_SHA256_DIGEST_LENGTH];
+
+    CCHmac(kCCHmacAlgSHA256,
+           cKey,
+           strlen(cKey),
+           cData,
+           strlen(cData),
+           cHMAC);
+
+    NSData *HMAC = [[NSData alloc] initWithBytes:cHMAC
+                                          length:sizeof(cHMAC)];
+
+    return [HMAC FPHexString];
+}
+
++ (NSString *)filePickerLocationWithOptionalSecurityFor:(NSString *)filePickerLocation
+{
+    if (fpAPPSECRETKEY)
+    {
+        NSString *handle = [[NSURL URLWithString:filePickerLocation] lastPathComponent];
+
+        NSAssert(handle,
+                 @"Failed to extract handle from %@",
+                 filePickerLocation);
+
+        NSString *policy = [FPUtils policyForHandle:handle
+                                     expiryInterval:3600.0
+                                     andCallOptions:@[@"read"]];
+
+        NSString *signature = [FPUtils signPolicy:policy
+                                         usingKey:fpAPPSECRETKEY];
+
+        NSString *queryString = [NSString stringWithFormat:@"?policy=%@&signature=%@",
+                                 policy,
+                                 signature];
+
+        return [filePickerLocation stringByAppendingString:queryString];
+    }
+    else
+    {
+        return filePickerLocation;
+    }
 }
 
 + (UIImage *)fixImageRotationIfNecessary:(UIImage *)image
