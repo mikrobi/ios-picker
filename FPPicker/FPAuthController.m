@@ -71,7 +71,11 @@
 
 - (void)viewWillAppear:(BOOL)animated
 {
-    self.contentSizeForViewInPopover = fpWindowSize;
+    if (SYSTEM_VERSION_LESS_THAN(@"7.0"))
+    {
+        self.contentSizeForViewInPopover = fpWindowSize;
+    }
+
     self.webView.frame = self.view.bounds;
 
     [super viewWillAppear:animated];
@@ -138,7 +142,15 @@
 
         for (id object in disallowedUrlPrefix)
         {
-            if ([normalizedString hasPrefix:[object stringByStandardizingPath]])
+            if ([object isEqualToString:@""])
+            {
+                // Ignore empty strings
+
+                continue;
+            }
+
+            if ([FPUtils validateURL:normalizedString
+                   againstURLPattern:object])
             {
                 return NO;
             }
@@ -146,7 +158,15 @@
 
         for (id object in allowedUrlPrefix)
         {
-            if ([normalizedString hasPrefix:[object stringByStandardizingPath]])
+            if ([object isEqualToString:@""])
+            {
+                // Ignore empty strings
+
+                continue;
+            }
+
+            if ([FPUtils validateURL:normalizedString
+                   againstURLPattern:object])
             {
                 [FPMBProgressHUD showHUDAddedTo:localWebView
                                        animated:YES];

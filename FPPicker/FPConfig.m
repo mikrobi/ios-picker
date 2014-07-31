@@ -7,6 +7,13 @@
 //
 
 #import "FPConfig.h"
+#import "FPPrivateConfig.h"
+
+@interface FPConfig ()
+
+@property (nonatomic, readwrite, strong) NSURL *baseURL;
+
+@end
 
 @implementation FPConfig
 
@@ -28,45 +35,23 @@ static FPConfig *FPSharedInstance = nil;
     return [self sharedInstance];
 }
 
-#pragma mark - Public Methods
-
-- (NSString *)APIKeyContentsFromFile
-{
-    NSString *envAPIKey = [[NSProcessInfo processInfo] environment][@"API_KEY_FILE"];
-
-    NSString *theAPIKey = [NSString stringWithContentsOfFile:envAPIKey
-                                                    encoding:NSUTF8StringEncoding
-                                                       error:nil];
-
-    // Trim whitespace and new lines
-
-    theAPIKey = [theAPIKey stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-    return theAPIKey;
-}
-
-- (NSArray *)cookies
-{
-    NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
-
-    return [cookieStorage cookiesForURL:self.baseURL];
-}
-
 #pragma mark - Accessors
+
+- (NSURL *)baseURL
+{
+    if (!_baseURL)
+    {
+        _baseURL = [NSURL URLWithString:fpBASE_URL];
+    }
+
+    return _baseURL;
+}
 
 - (NSString *)APIKey
 {
     if (!_APIKey)
     {
-        if ((_APIKey = [self APIKeyContentsFromFile]))
-        {
-            NSLog(@"(DEBUG) Reading API KEY from API_KEY file (Info.plist entry will be ignored)");
-        }
-
-        if (!_APIKey)
-        {
-            _APIKey = self.infoDict[@"Filepicker API Key"];
-        }
+        _APIKey = self.infoDict[@"Filepicker API Key"];
     }
 
     return _APIKey;
@@ -80,16 +65,6 @@ static FPConfig *FPSharedInstance = nil;
     }
 
     return _appSecretKey;
-}
-
-- (NSURL *)baseURL
-{
-    if (!_baseURL)
-    {
-        _baseURL = [NSURL URLWithString:fpBASE_URL];
-    }
-
-    return _baseURL;
 }
 
 - (NSString *)storeAccess
@@ -133,6 +108,13 @@ static FPConfig *FPSharedInstance = nil;
 }
 
 #pragma mark - Private
+
+- (NSArray *)cookies
+{
+    NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+
+    return [cookieStorage cookiesForURL:self.baseURL];
+}
 
 - (NSDictionary *)infoDict
 {

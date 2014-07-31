@@ -21,7 +21,6 @@
 @property UILabel *emptyLabel;
 @property NSCache *imageViews;
 @property NSMutableSet *selectedAssets;
-@property UITableView *tableView;
 
 @end
 
@@ -88,7 +87,10 @@
 
 - (void)loadPhotoData
 {
-    self.contentSizeForViewInPopover = fpWindowSize;
+    if (SYSTEM_VERSION_LESS_THAN(@"7.0"))
+    {
+        self.contentSizeForViewInPopover = fpWindowSize;
+    }
 
     CGRect bounds = [self getViewBounds];
     self.thumbSize = fpLocalThumbSize;
@@ -208,8 +210,6 @@
     for (int i = 0; i < self.numPerRow; i++)
     {
         NSInteger index = self.numPerRow * indexPath.row + i;
-
-        NSLog(@"Index %ld", (long)index);
 
         if (self.photos.count <= index)
         {

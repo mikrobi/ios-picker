@@ -9,7 +9,8 @@
 #import <XCTest/XCTest.h>
 
 // Collaborators
-#import "FPConfig.h"
+
+#import "FPPrivateConfig.h"
 
 @interface FPConfigTests : XCTestCase
 
@@ -49,19 +50,6 @@
     XCTAssertEqualObjects(config1,
                           config2,
                           @"new should return a shared instance");
-}
-
-- (void)testAPIKeyFromFile
-{
-    id configMock = OCMPartialMock([FPConfig sharedInstance]);
-
-    OCMStub([configMock APIKeyContentsFromFile]).andReturn(@"MY_API_KEY");
-
-    XCTAssertEqualObjects([FPConfig sharedInstance].APIKey,
-                          @"MY_API_KEY",
-                          @"API key does not match");
-
-    OCMVerifyAll(configMock);
 }
 
 - (void)testAPIKeyFromPList

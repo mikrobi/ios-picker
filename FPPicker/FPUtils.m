@@ -7,7 +7,7 @@
 //
 
 #import "FPUtils.h"
-#import "FPConfig.h"
+#import "FPPrivateConfig.h"
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <UIKit/UIKit.h>
 #import <AssetsLibrary/AssetsLibrary.h>
@@ -314,6 +314,43 @@
     {
         return filePickerLocation;
     }
+}
+
++ (BOOL)  validateURL:(NSString *)URL
+    againstURLPattern:(NSString *)URLPattern
+{
+    NSString *regexpPattern = [URLPattern stringByStandardizingPath];
+
+    regexpPattern = [NSRegularExpression escapedPatternForString:regexpPattern];
+
+    regexpPattern = [regexpPattern stringByReplacingOccurrencesOfString:@"\\*"
+                                                             withString:@"((\\w|\\-)+)"];
+
+    regexpPattern = [@"^" stringByAppendingString : regexpPattern];
+
+    NSRegularExpressionOptions matchOptions = NSRegularExpressionCaseInsensitive |
+                                              NSRegularExpressionAnchorsMatchLines;
+
+    NSError *error;
+
+    NSRegularExpression *regexp = [NSRegularExpression regularExpressionWithPattern:regexpPattern
+                                                                            options:matchOptions
+                                                                              error:&error];
+
+    if (error)
+    {
+        DLog(@"Error: %@", error);
+
+        return NO;
+    }
+
+    NSString *standardizedURLPath = [URL stringByStandardizingPath];
+
+    NSUInteger numberOfMatches = [regexp numberOfMatchesInString:standardizedURLPath
+                                                         options:NSMatchingReportCompletion
+                                                           range:NSMakeRange(0, standardizedURLPath.length)];
+
+    return numberOfMatches > 0;
 }
 
 + (UIImage *)fixImageRotationIfNecessary:(UIImage *)image

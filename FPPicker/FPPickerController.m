@@ -13,7 +13,7 @@
 
 @interface FPPickerController ()
 
-@property BOOL hasStatusBar;
+@property (nonatomic, assign) BOOL hasStatusBar;
 
 @end
 
@@ -78,9 +78,11 @@
     return self;
 }
 
-- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
+- (id)initWithNibName:(NSString *)nibNameOrNil
+               bundle:(NSBundle *)nibBundleOrNil
 {
-    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    self = [super initWithNibName:nibNameOrNil
+                           bundle:nibBundleOrNil];
 
     [self initializeProperties];
 
@@ -90,10 +92,14 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+
     // Do any additional setup after loading the view.
+
     self.delegate = self;
 
-    if (fpAPIKEY == NULL || [fpAPIKEY isEqualToString:@""] || [fpAPIKEY isEqualToString:@"SET_FILEPICKER.IO_APIKEY_HERE"])
+    if (!fpAPIKEY ||
+        [fpAPIKEY isEqualToString:@""] ||
+        [fpAPIKEY isEqualToString:@"SET_FILEPICKER.IO_APIKEY_HERE"])
     {
         NSException *apikeyException = [NSException
                                         exceptionWithName:@"Filepicker Configuration Error"
@@ -102,7 +108,8 @@
         [apikeyException raise];
     }
 
-    FPSourceListController *fpSourceListController = [FPSourceListController alloc];
+    FPSourceListController *fpSourceListController = [FPSourceListController new];
+
     fpSourceListController.fpdelegate = self;
     fpSourceListController.imageDelegate = self;
     fpSourceListController.sourceNames = _sourceNames;
@@ -111,9 +118,8 @@
     fpSourceListController.maxFiles = _maxFiles;
     fpSourceListController.title = self.title;
 
-    fpSourceListController = [fpSourceListController init];
-
-    [self pushViewController:fpSourceListController animated:YES];
+    [self pushViewController:fpSourceListController
+                    animated:YES];
 }
 
 - (void)viewDidUnload
@@ -131,7 +137,8 @@
 
 #pragma mark UIImagePickerControllerDelegate Methods
 
-- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
+- (void)    imagePickerController:(UIImagePickerController *)picker
+    didFinishPickingMediaWithInfo:(NSDictionary *)info
 {
     if (self.hasStatusBar)
     {
@@ -157,10 +164,10 @@
         imageToSave = originalImage;
     }
 
-    const float ThumbnailSize = 115.0f;
-    float scaleFactor = ThumbnailSize / fminf(imageToSave.size.height, imageToSave.size.width);
-    float newHeight = imageToSave.size.height * scaleFactor;
-    float newWidth = imageToSave.size.width * scaleFactor;
+    const CGFloat ThumbnailSize = 115.0f;
+    CGFloat scaleFactor = ThumbnailSize / fminf(imageToSave.size.height, imageToSave.size.width);
+    CGFloat newHeight = imageToSave.size.height * scaleFactor;
+    CGFloat newWidth = imageToSave.size.width * scaleFactor;
 
     UIGraphicsBeginImageContext(CGSizeMake(newWidth, newHeight));
     [imageToSave drawInRect:CGRectMake(0, 0, newWidth, newHeight)];
@@ -179,7 +186,9 @@
         });
     }
 
-    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:picker.view animated:YES];
+    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:picker.view
+                                                  animated:YES];
+
     hud.labelText = @"Uploading...";
     hud.mode = FPMBProgressHUDModeDeterminate;
 
@@ -190,15 +199,7 @@
 
         if ([info[@"UIImagePickerControllerMediaType"] isEqual:(NSString *)kUTTypeImage])
         {
-            NSString *dataType = @"image/*";
-
-            for (NSString *type in self.dataTypes)
-            {
-                if ([type isEqualToString:@"image/png"] || [type isEqualToString:@"image/jpeg"])
-                {
-                    dataType = type;
-                }
-            }
+            NSString *dataType = @"image/jpeg";
 
             NSLog(@"should upload: %@", _shouldUpload ? @"YES" : @"NO");
 
@@ -246,9 +247,9 @@
                 };
 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    NSLog(@"dispatched main thread: %@", [NSThread isMainThread] ? @"YES" : @"NO");
+                    [FPMBProgressHUD hideHUDForView:self.view
+                                           animated:YES];
 
-                    [FPMBProgressHUD hideHUDForView:self.view animated:YES];
                     [picker dismissViewControllerAnimated:NO
                                                completion: ^{
                         [_fpdelegate FPPickerController:self
@@ -363,7 +364,8 @@
 
 #pragma mark FPSourcePickerDelegate Methods
 
-- (void)FPSourceController:(FPSourceController *)picker didPickMediaWithInfo:(NSDictionary *)info
+- (void)FPSourceController:(FPSourceController *)picker
+      didPickMediaWithInfo:(NSDictionary *)info
 {
     if ([_fpdelegate respondsToSelector:@selector(FPPickerController:didPickMediaWithInfo:)])
     {
@@ -372,7 +374,8 @@
     }
 }
 
-- (void)FPSourceController:(FPSourceController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
+- (void)       FPSourceController:(FPSourceController *)picker
+    didFinishPickingMediaWithInfo:(NSDictionary *)info
 {
     //The user chose a file from the cloud or camera roll.
     NSLog(@"Picked something from a source: %@", info);
@@ -383,7 +386,8 @@
     _fpdelegate = nil;
 }
 
-- (void)FPSourceController:(FPSourceController *)picker didFinishPickingMultipleMediaWithResults:(NSArray *)results
+- (void)                  FPSourceController:(FPSourceController *)picker
+    didFinishPickingMultipleMediaWithResults:(NSArray *)results
 {
     //The user chose a file from the cloud or camera roll.
     NSLog(@"Picked multiple files from a source: %@", results);
@@ -414,12 +418,16 @@
 
 #pragma mark UINavigationControllerDelegate Methods
 
-- (void)navigationController:(UINavigationController *)navigationController didShowViewController:(UIViewController *)viewController animated:(BOOL)animated
+- (void)navigationController:(UINavigationController *)navigationController
+       didShowViewController:(UIViewController *)viewController
+                    animated:(BOOL)animated
 {
     return;
 }
 
-- (void)navigationController:(UINavigationController *)navigationController willShowViewController:(UIViewController *)viewController animated:(BOOL)animated
+- (void)navigationController:(UINavigationController *)navigationController
+      willShowViewController:(UIViewController *)viewController
+                    animated:(BOOL)animated
 {
     return;
 }

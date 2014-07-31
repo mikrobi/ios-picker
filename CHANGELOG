@@ -1,6 +1,13 @@
+v 3.2.0 - 07/31/2014
+- FPConfig is now the preferred way to set API key, security settings, etc. (Info plist configuration is still supported but deprecated.)
+- Added "pull to refresh" gesture to remote source table views.
+- Changed caching policy to prevent remote source table results from becoming stale.
+- Fixed ambiguous mimetype on camera picture uploads (defaulting to image/jpeg now.)
+- Added https://*.app.box.com/api/ to allowedUrlPrefix.plist
+
 v 3.1.0 - 07/17/2014
-- Adding security support
-- Adding store options support
+- Added security support
+- Added store options support
 
 v 3.0.3 - 07/09/2014
 - Fixed multipart upload data corruption

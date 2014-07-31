@@ -32,13 +32,26 @@ typedef void (^FPFetchObjectProgressBlock)(float progress);
 @property (nonatomic, strong) UIImage *placeholderImage;
 @property (nonatomic, strong) UIImage *selectionOverlayImage;
 
+/*!
+   Operation queue for content preload requests.
+   This operation queue (unlike FPAPIClient -operationQueue)
+   supports unlimited simultaneous operations.
+ */
+@property (nonatomic, strong) NSOperationQueue *contentPreloadOperationQueue;
+
+/*!
+   Operation queue for content load requests.
+   This operation queue is limited to 1 simultaneous operation.
+ */
+@property (nonatomic, strong) NSOperationQueue *contentLoadOperationQueue;
+
 @end
+
 
 @implementation FPSourceController
 
 static const NSInteger CELL_FIRST_TAG = 1000;
-static const NSInteger ROW_HEIGHT = 44;
-//static const CGFloat UPLOAD_BUTTON_CONTAINER_HEIGHT = 45.f;
+static const CGFloat ROW_HEIGHT = 44.0;
 
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
 {
@@ -58,12 +71,22 @@ static const NSInteger ROW_HEIGHT = 44;
 
 - (void)backButtonAction
 {
+    [self.contentPreloadOperationQueue cancelAllOperations];
+    [self.contentLoadOperationQueue cancelAllOperations];
     [self.navigationController popViewControllerAnimated:YES];
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+
+    // Add "Pull to Refresh" control
+
+    self.refreshControl = [UIRefreshControl new];
+
+    [self.refreshControl addTarget:self
+                            action:@selector(refresh)
+                  forControlEvents:UIControlEventValueChanged];
 
     // Make sure that we have a service
 
@@ -79,14 +102,15 @@ static const NSInteger ROW_HEIGHT = 44;
 
     if (![self.sourceType.identifier isEqualToString:FPSourceImagesearch])
     {
-        //For Image Search, loading root is useless
-        [self fpLoadContents:self.path];
+        // For Image Search, loading root is useless
+
+        [self fpLoadContents:self.path
+                 cachePolicy:NSURLRequestReloadRevalidatingCacheData];
     }
 
     [self setTitle:self.sourceType.name];
 
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
-    self.precacheOperations = [NSMutableDictionary dictionary];
 
     if (self.selectMultiple && ![self.viewType isEqualToString:@"thumbnails"])
     {
@@ -108,31 +132,21 @@ static const NSInteger ROW_HEIGHT = 44;
     self.path = nil;
     self.sourceType = nil;
     self.fpdelegate = nil;
-    //TODO: get rid of precaching ops
-    self.precacheOperations = nil;
 }
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation
 {
-    //return (interfaceOrientation == UIInterfaceOrientationPortrait);
     return YES;
 }
 
 - (void)viewWillAppear:(BOOL)animated
 {
-    self.contentSizeForViewInPopover = fpWindowSize;
-
-    CGRect bounds = [self getViewBounds];
-    self.thumbSize = fpRemoteThumbSize;
-    self.numPerRow = (int)bounds.size.width / self.thumbSize;
-    self.padding = (int)((bounds.size.width - self.numPerRow * self.thumbSize) / (self.numPerRow + 1.0f));
-
-    if (self.padding < 4)
+    if (SYSTEM_VERSION_LESS_THAN(@"7.0"))
     {
-        self.numPerRow -= 1;
-        self.padding = (int)((bounds.size.width - self.numPerRow * self.thumbSize) / (self.numPerRow + 1.0f));
+        self.contentSizeForViewInPopover = fpWindowSize;
     }
 
+    [self setupLayoutConstants];
     [super viewWillAppear:animated];
 }
 
@@ -154,6 +168,36 @@ static const NSInteger ROW_HEIGHT = 44;
     {
         [v removeFromSuperview];
     }
+}
+
+- (void)didRotateFromInterfaceOrientation:(UIInterfaceOrientation)fromInterfaceOrientation
+{
+    [super didRotateFromInterfaceOrientation:fromInterfaceOrientation];
+    [self setupLayoutConstants];
+    [self.tableView reloadData];
+}
+
+#pragma mark - Accessors
+
+- (NSOperationQueue *)contentPreloadOperationQueue
+{
+    if (!_contentPreloadOperationQueue)
+    {
+        _contentPreloadOperationQueue = [NSOperationQueue new];
+    }
+
+    return _contentPreloadOperationQueue;
+}
+
+- (NSOperationQueue *)contentLoadOperationQueue
+{
+    if (!_contentLoadOperationQueue)
+    {
+        _contentLoadOperationQueue = [NSOperationQueue new];
+        _contentLoadOperationQueue.maxConcurrentOperationCount = 1;
+    }
+
+    return _contentLoadOperationQueue;
 }
 
 - (UIImage *)placeholderImage
@@ -250,7 +294,7 @@ static const NSInteger ROW_HEIGHT = 44;
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     static NSString *cellIdentifier = fpCellIdentifier;
-    FPThumbCell *cell = [self.tableView dequeueReusableCellWithIdentifier:cellIdentifier];
+    FPThumbCell *cell = [tableView dequeueReusableCellWithIdentifier:cellIdentifier];
 
     if (!cell)
     {
@@ -259,17 +303,6 @@ static const NSInteger ROW_HEIGHT = 44;
     }
     else
     {
-        // You need to cancel the old precache request.
-
-        NSString *precacheKey = [NSString stringWithFormat:@"precache_%ld", (long)indexPath.row];
-
-        if (self.precacheOperations[precacheKey])
-        {
-            AFHTTPRequestOperation *operation = self.precacheOperations[precacheKey];
-
-            [operation cancel];
-        }
-
         cell.accessoryType = UITableViewCellAccessoryNone;
         cell.textLabel.textColor = [UIColor blackColor];
         cell.imageView.alpha = 1.0;
@@ -305,15 +338,15 @@ static const NSInteger ROW_HEIGHT = 44;
     self.nextPageSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     self.nextPageSpinner.hidesWhenStopped = YES;
 
-    NSInteger height = ROW_HEIGHT;
+    CGFloat height = ROW_HEIGHT;
 
     if ([self.viewType isEqualToString:@"thumbnails"])
     {
         height = self.thumbSize + self.padding;
     }
 
-    self.nextPageSpinner.frame = CGRectMake(floorf(floorf(height - 20) / 2),
-                                            floorf((height - 20) / 2),
+    self.nextPageSpinner.frame = CGRectMake(floorf(floorf(height - 20) * 0.5),
+                                            floorf((height - 20) * 0.5),
                                             20,
                                             20);
 
@@ -530,17 +563,19 @@ static const NSInteger ROW_HEIGHT = 44;
 {
     NSMutableDictionary *obj = self.contents[indexPath.row];
     BOOL isDir = [obj[@"is_dir"] boolValue];
-    UIImage *thumbnail = [self.tableView cellForRowAtIndexPath:indexPath].imageView.image;
+    UIImage *thumbnail = [tableView cellForRowAtIndexPath:indexPath].imageView.image;
     BOOL thumbExists = [obj[@"thumb_exists"] boolValue];
 
     if (thumbExists)
     {
         [self objectSelectedAtIndex:indexPath.row
+                            forView:tableView
                       withThumbnail:thumbnail];
     }
     else
     {
-        [self objectSelectedAtIndex:indexPath.row];
+        [self objectSelectedAtIndex:indexPath.row
+                            forView:tableView];
     }
 
     // Clear selection if object is a directory
@@ -576,7 +611,7 @@ static const NSInteger ROW_HEIGHT = 44;
 {
     [super uploadButtonTapped:sender];
 
-    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:self.view
+    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:self.navigationController.view
                                                   animated:YES];
 
     hud.mode = FPMBProgressHUDModeDeterminate;
@@ -637,7 +672,7 @@ static const NSInteger ROW_HEIGHT = 44;
             FPFetchObjectFailureBlock failureBlock = ^(NSError *error) {
                 NSLog(@"FAIL %@", error);
 
-                [FPMBProgressHUD hideAllHUDsForView:self.view
+                [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                            animated:YES];
 
                 if (error.code == kCFURLErrorRedirectToNonExistentLocation ||
@@ -703,11 +738,13 @@ static const NSInteger ROW_HEIGHT = 44;
         thumbnail = selectedView.image;
 
         [self objectSelectedAtIndex:index
+                            forView:sender.view
                       withThumbnail:thumbnail];
     }
     else
     {
-        [self objectSelectedAtIndex:index];
+        [self objectSelectedAtIndex:index
+                            forView:sender.view];
     }
 }
 
@@ -729,13 +766,12 @@ static const NSInteger ROW_HEIGHT = 44;
              cachePolicy:NSURLRequestReturnCacheDataElseLoad];
 }
 
-- (void)fpLoadContents:(NSString *)loadpath cachePolicy:(NSURLRequestCachePolicy)policy
+- (void)fpLoadContents:(NSString *)loadpath
+           cachePolicy:(NSURLRequestCachePolicy)policy
 {
     [self clearSelection];
 
-    UIView *hudParentView = self.view.superview ? self.view.superview : self.view;
-
-    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:hudParentView
+    FPMBProgressHUD *hud = [FPMBProgressHUD showHUDAddedTo:self.navigationController.view
                                                   animated:YES];
 
     hud.labelText = @"Loading contents";
@@ -748,12 +784,16 @@ static const NSInteger ROW_HEIGHT = 44;
                                                              id responseObject) {
         [self fpLoadResponseSuccessAtPath:loadpath
                                withResult:responseObject];
+
+        [self.refreshControl endRefreshing];
     };
 
     AFRequestOperationFailureBlock failureOperationBlock = ^(AFHTTPRequestOperation *operation,
                                                              NSError *error) {
         [self fpLoadResponseFailureAtPath:loadpath
                                 withError:error];
+
+        [self.refreshControl endRefreshing];
     };
 
     AFHTTPRequestOperation *operation;
@@ -762,30 +802,23 @@ static const NSInteger ROW_HEIGHT = 44;
                                                                     success:successOperationBlock
                                                                     failure:failureOperationBlock];
 
-    if ([self.sourceType.identifier isEqualToString:FPSourceImagesearch])
-    {
-        AFHTTPRequestOperation *oldOperation = self.precacheOperations[@"imagesearch_"];
-
-        [oldOperation cancel];
-
-        self.precacheOperations[@"imagesearch_"] = operation;
-    }
-
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
+    [self.contentLoadOperationQueue cancelAllOperations];
+    [self.contentLoadOperationQueue addOperation:operation];
 }
 
-- (void)fpLoadResponseSuccessAtPath:(NSString *)loadpath withResult:(id)JSON
+- (void)fpLoadResponseSuccessAtPath:(NSString *)loadpath
+                         withResult:(id)JSON
 {
     NSLog(@"Loading Contents: %@", JSON);
 
     self.contents = JSON[@"contents"];
     self.viewType = JSON[@"view"];
 
-    NSString *next = JSON[@"next"];
+    id next = JSON[@"next"];
 
     if (next && next != (NSString *)[NSNull null])
     {
-        self.nextPage = next;
+        self.nextPage = [next stringValue];
     }
     else
     {
@@ -823,40 +856,26 @@ static const NSInteger ROW_HEIGHT = 44;
         if ([JSON[@"contents"] count] == 0 &&
             (self.sourceType.identifier != FPSourceImagesearch))
         {
-            NSLog(@"nothing");
-
             [self setupEmptyView];
         }
     }
 
-    if (self.view.superview)
-    {
-        [FPMBProgressHUD hideAllHUDsForView:self.view.superview
-                                   animated:YES];
-    }
-
-    [FPMBProgressHUD hideAllHUDsForView:self.view
+    [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                animated:YES];
 
     [self.tableView reloadData];
-
-    NSLog(@"after reload");
-
-    if ([self.sourceType.identifier isEqualToString:FPSourceImagesearch])
-    {
-        //NSLog(@"%@", self.searchDisplayController);
-        [self.searchDisplayController.searchResultsTableView reloadData];
-    }
-
-
     [self afterReload];
 }
 
 - (void)fpLoadResponseFailureAtPath:(NSString *)loadpath
                           withError:(NSError *)error
 {
-    [FPMBProgressHUD hideAllHUDsForView:self.view
-                               animated:YES];
+    if (self.contentLoadOperationQueue.isSuspended &&
+        self.contentPreloadOperationQueue.isSuspended)
+    {
+        [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
+                                   animated:YES];
+    }
 
     NSLog(@"Error: %@", error);
 
@@ -910,43 +929,17 @@ static const NSInteger ROW_HEIGHT = 44;
                   forCell:(NSInteger)cellIndex
               cachePolicy:(NSURLRequestCachePolicy)policy
 {
-    NSInteger nilInteger = -1;
-
     NSURLRequest *request = [self requestForLoadPath:loadpath
                                           withFormat:@"info"
                                          cachePolicy:policy];
 
-    NSString *precacheKey = [NSString stringWithFormat:@"precache_%ld", (long)cellIndex];
-
-    AFRequestOperationSuccessBlock successOperationBlock = ^(AFHTTPRequestOperation *operation,
-                                                             id responseObject) {
-        //NSLog(@"JSON: %@", JSON);
-        if (cellIndex != nilInteger)
-        {
-            [self.precacheOperations removeObjectForKey:precacheKey];
-        }
-    };
-
-    AFRequestOperationFailureBlock failureOperationBlock = ^(AFHTTPRequestOperation *operation,
-                                                             NSError *error) {
-        if (cellIndex != nilInteger)
-        {
-            [self.precacheOperations removeObjectForKey:precacheKey];
-        }
-    };
-
     AFHTTPRequestOperation *operation;
 
     operation = [[FPAPIClient sharedClient] HTTPRequestOperationWithRequest:request
-                                                                    success:successOperationBlock
-                                                                    failure:failureOperationBlock];
+                                                                    success:nil
+                                                                    failure:nil];
 
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
-
-    if (cellIndex != nilInteger)
-    {
-        self.precacheOperations[precacheKey] = operation;
-    }
+    [self.contentPreloadOperationQueue addOperation:operation];
 }
 
 - (void)fpLoadNextPage
@@ -971,11 +964,11 @@ static const NSInteger ROW_HEIGHT = 44;
         [tempArray addObjectsFromArray:responseObject[@"contents"]];
         self.contents = tempArray;
 
-        NSString *next = responseObject[@"next"];
+        id next = responseObject[@"next"];
 
         if (next && next != (NSString *)[NSNull null])
         {
-            self.nextPage = next;
+            self.nextPage = [next stringValue];
         }
         else
         {
@@ -1002,7 +995,7 @@ static const NSInteger ROW_HEIGHT = 44;
                                                                     success:successOperationBlock
                                                                     failure:failureOperationBlock];
 
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
+    [self.contentPreloadOperationQueue addOperation:operation];
 }
 
 - (void)clearSelection
@@ -1023,12 +1016,15 @@ static const NSInteger ROW_HEIGHT = 44;
 }
 
 - (void)objectSelectedAtIndex:(NSInteger)index
+                      forView:(UIView *)view
 {
     [self objectSelectedAtIndex:index
+                        forView:view
                   withThumbnail:nil];
 }
 
 - (void)objectSelectedAtIndex:(NSInteger)index
+                      forView:(UIView *)view
                 withThumbnail:(UIImage *)thumbnail
 {
     NSDictionary *obj = self.contents[index];
@@ -1059,11 +1055,11 @@ static const NSInteger ROW_HEIGHT = 44;
 
     if (self.selectMultiple)
     {
-        UIView *view = [self.view viewWithTag:CELL_FIRST_TAG + index];
+        UIView *childView = [view viewWithTag:CELL_FIRST_TAG + index];
 
         if ([self.viewType isEqualToString:@"thumbnails"])
         {
-            [self toggleSelectionOnThumbnailView:view];
+            [self toggleSelectionOnThumbnailView:childView];
         }
 
         // Table selection takes care of list views, so no need for an else
@@ -1092,7 +1088,7 @@ static const NSInteger ROW_HEIGHT = 44;
         __block FPMBProgressHUD *hud;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            hud = [FPMBProgressHUD showHUDAddedTo:self.view
+            hud = [FPMBProgressHUD showHUDAddedTo:self.navigationController.view
                                          animated:YES];
 
             hud.mode = FPMBProgressHUDModeDeterminate;
@@ -1101,7 +1097,7 @@ static const NSInteger ROW_HEIGHT = 44;
 
         FPFetchObjectSuccessBlock successBlock = ^(NSDictionary *data) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [FPMBProgressHUD hideAllHUDsForView:self.view
+                [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                            animated:YES];
 
                 [self.fpdelegate FPSourceController:self
@@ -1129,7 +1125,7 @@ static const NSInteger ROW_HEIGHT = 44;
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                [FPMBProgressHUD hideAllHUDsForView:self.view
+                [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                            animated:YES];
 
                 [self.fpdelegate FPSourceControllerDidCancel:self];
@@ -1150,11 +1146,8 @@ static const NSInteger ROW_HEIGHT = 44;
 
 - (void)toggleSelectionOnThumbnailView:(UIView *)view
 {
-    //View is an image view
-    UIImageView *imageView = (UIImageView *)view;
-
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIImageView *overlay = imageView.subviews[0];
+        UIImageView *overlay = view.subviews[0];
 
         overlay.hidden = !overlay.hidden;
     });
@@ -1163,7 +1156,7 @@ static const NSInteger ROW_HEIGHT = 44;
 - (void)finishMultipleUpload:(NSArray *)results
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [FPMBProgressHUD hideAllHUDsForView:self.view
+        [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                    animated:YES];
 
         [self.fpdelegate FPSourceController:nil
@@ -1266,7 +1259,7 @@ static const NSInteger ROW_HEIGHT = 44;
         }
     }];
 
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
+    [self.contentPreloadOperationQueue addOperation:operation];
 }
 
 - (void)getObjectInfoAndData:(NSDictionary *)obj
@@ -1345,7 +1338,7 @@ static const NSInteger ROW_HEIGHT = 44;
         }
     }];
 
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
+    [self.contentPreloadOperationQueue addOperation:operation];
 }
 
 - (NSURLRequest *)requestForLoadPath:(NSString *)loadpath
@@ -1398,7 +1391,7 @@ static const NSInteger ROW_HEIGHT = 44;
 
 - (void)refresh
 {
-    [FPMBProgressHUD hideAllHUDsForView:self.view
+    [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                animated:YES];
 
     [self fpLoadContents:self.path
@@ -1415,7 +1408,7 @@ static const NSInteger ROW_HEIGHT = 44;
                                              cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData
                                          timeoutInterval:240];
 
-    [FPMBProgressHUD showHUDAddedTo:self.view
+    [FPMBProgressHUD showHUDAddedTo:self.navigationController.view
                            animated:YES];
 
     AFRequestOperationSuccessBlock successOperationBlock = ^(AFHTTPRequestOperation *operation,
@@ -1450,7 +1443,7 @@ static const NSInteger ROW_HEIGHT = 44;
         }
 
 
-        [FPMBProgressHUD hideAllHUDsForView:self.view
+        [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                    animated:YES];
 
         [self.navigationController popViewControllerAnimated:YES];
@@ -1458,7 +1451,7 @@ static const NSInteger ROW_HEIGHT = 44;
 
     AFRequestOperationFailureBlock failureOperationBlock = ^(AFHTTPRequestOperation *operation,
                                                              NSError *error) {
-        [FPMBProgressHUD hideAllHUDsForView:self.view
+        [FPMBProgressHUD hideAllHUDsForView:self.navigationController.view
                                    animated:YES];
 
         NSLog(@"error: %@", error);
@@ -1480,7 +1473,7 @@ static const NSInteger ROW_HEIGHT = 44;
                                                                     success:successOperationBlock
                                                                     failure:failureOperationBlock];
 
-    [[FPAPIClient sharedClient].operationQueue addOperation:operation];
+    [self.contentPreloadOperationQueue addOperation:operation];
 }
 
 - (CGRect)getViewBounds
@@ -1545,6 +1538,21 @@ static const NSInteger ROW_HEIGHT = 44;
     subLabel.text = @"Pull down to refresh";
 
     [self.view addSubview:subLabel];
+}
+
+- (void)setupLayoutConstants
+{
+    CGSize screenSize = [self getViewBounds].size;
+
+    self.thumbSize = fpRemoteThumbSize;
+    self.numPerRow = (int)screenSize.width / self.thumbSize;
+    self.padding = (int)((screenSize.width - self.numPerRow * self.thumbSize) / (self.numPerRow + 1.0f));
+
+    if (self.padding < 4)
+    {
+        self.numPerRow -= 1;
+        self.padding = (int)((screenSize.width - self.numPerRow * self.thumbSize) / (self.numPerRow + 1.0f));
+    }
 }
 
 @end

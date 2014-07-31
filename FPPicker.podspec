@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = 'FPPicker'
-  s.version      = '3.1.0'
+  s.version      = '3.2.0'
   s.summary      = 'SDK to access Filepicker.io API'
 
   s.description  = <<-DESC
@@ -16,14 +16,14 @@ Pod::Spec.new do |s|
 
   s.source       = {
     :git => 'https://github.com/Ink/ios-picker.git',
-    :tag => 'v3.1.0'
+    :tag => 'v3.2.0'
   }
 
   s.platforms    = { :ios => '6.0' }
 
   s.prefix_header_file  = 'FPPicker/FPPicker-Prefix.pch'
 
-  s.public_header_files = 'FPPicker/FPConstants.h', 'FPPicker/FPPicker.h', 'FPPicker/FPPickerController.h', 'FPPicker/FPSaveController.h', 'FPPicker/FPExternalHeaders.h'
+  s.public_header_files = 'FPPicker/FPConfig.h', 'FPPicker/FPConstants.h', 'FPPicker/FPPicker.h', 'FPPicker/FPPickerController.h', 'FPPicker/FPSaveController.h', 'FPPicker/FPExternalHeaders.h'
   s.source_files = 'FPPicker/*.{h,m}'
 
   s.frameworks   = 'AssetsLibrary', 'CoreFoundation', 'CoreGraphics', 'Foundation', 'MobileCoreServices', 'QuartzCore', 'SystemConfiguration'
