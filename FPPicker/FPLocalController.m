@@ -9,6 +9,7 @@
 #import "FPLocalController.h"
 #import "FPProgressTracker.h"
 #import "FPUtils.h"
+#import "FPMediaInfo.h"
 
 @interface FPLocalController ()
 {
@@ -232,7 +233,6 @@
 
         if ([uti isEqualToString:@"com.apple.quicktime-movie"])
         {
-            //ALAssetRepresentation *rep = [asset defaultRepresentation];
             NSLog(@"data: %@", [asset valueForProperty:ALAssetPropertyDuration]);
 
             NSString *videoFilePath = [[FPUtils frameworkBundle] pathForResource:@"glyphicons_180_facetime_video"
@@ -609,40 +609,45 @@
     }
 }
 
-- (void)uploadPhotoAsset:(ALAsset *)asset shouldUpload:(BOOL)shouldUpload
+- (void)uploadPhotoAsset:(ALAsset *)asset
+            shouldUpload:(BOOL)shouldUpload
                  success:(void (^)(NSDictionary *data))success
                  failure:(void (^)(NSError *error, NSDictionary *data))failure
                 progress:(void (^)(float progress))progress
 {
     ALAssetRepresentation *representation = asset.defaultRepresentation;
-    NSString *filename = representation.filename;
+    FPMediaInfo *mediaInfo = [FPMediaInfo new];
 
-    UIImage *image = [UIImage imageWithCGImage:representation.fullResolutionImage
-                                         scale:representation.scale
-                                   orientation:(UIImageOrientation)representation.orientation];
+    mediaInfo.mediaType = (NSString *)kUTTypeImage;
+    mediaInfo.originalAsset = asset;
 
     FPUploadAssetSuccessWithLocalURLBlock successBlock = ^(id JSON,
                                                            NSURL *localURL) {
-        NSDictionary *output = [FPUtils mediaInfoForMediaType:(NSString *)kUTTypeImage
-                                                     mediaURL:localURL
-                                                originalImage:image
-                                              andJSONResponse:JSON];
+        NSDictionary *data = JSON[@"data"][0][@"data"];
 
-        success(output);
+        mediaInfo.mediaURL = localURL;
+        mediaInfo.remoteURL = [NSURL URLWithString:JSON[@"data"][0][@"url"]];
+        mediaInfo.filename = data[@"filename"];
+        mediaInfo.key = data[@"key"];
+
+        UIImage *imageToCompress = [UIImage imageWithCGImage:representation.fullScreenImage];
+
+        mediaInfo.originalImage = [FPUtils compressImage:imageToCompress
+                                   withCompressionFactor:0.6f
+                                          andOrientation:(UIImageOrientation)representation.orientation];
+
+        imageToCompress = nil;
+
+        success([mediaInfo dictionary]);
     };
 
     FPUploadAssetFailureWithLocalURLBlock failureBlock = ^(NSError *error,
                                                            id JSON,
                                                            NSURL *localURL) {
-        NSDictionary *output = @{
-            @"FPPickerControllerMediaType":(NSString *)kUTTypeImage,
-            @"FPPickerControllerOriginalImage":image,
-            @"FPPickerControllerMediaURL":localURL,
-            @"FPPickerControllerRemoteURL":@"",
-            @"FPPickerControllerFilename":filename
-        };
+        mediaInfo.mediaURL = localURL;
+        mediaInfo.filename = representation.filename;
 
-        failure(error, output);
+        failure(error, [mediaInfo dictionary]);
     };
 
     [FPLibrary uploadAsset:asset
@@ -653,35 +658,37 @@
                   progress:progress];
 }
 
-- (void)uploadVideoAsset:(ALAsset *)asset shouldUpload:(BOOL)shouldUpload
+- (void)uploadVideoAsset:(ALAsset *)asset
+            shouldUpload:(BOOL)shouldUpload
                  success:(void (^)(NSDictionary *data))success
                  failure:(void (^)(NSError *error, NSDictionary *data))failure
                 progress:(void (^)(float progress))progress
 {
-    ALAssetRepresentation *representation = [asset defaultRepresentation];
-    NSString *filename = representation.filename;
+    ALAssetRepresentation *representation = asset.defaultRepresentation;
+    FPMediaInfo *mediaInfo = [FPMediaInfo new];
+
+    mediaInfo.mediaType = (NSString *)kUTTypeVideo;
+    mediaInfo.originalAsset = asset;
 
     FPUploadAssetSuccessWithLocalURLBlock successBlock = ^(id JSON,
                                                            NSURL *localURL) {
-        NSDictionary *output = [FPUtils mediaInfoForMediaType:(NSString *)kUTTypeVideo
-                                                     mediaURL:localURL
-                                                originalImage:nil
-                                              andJSONResponse:JSON];
+        NSDictionary *data = JSON[@"data"][0][@"data"];
 
-        success(output);
+        mediaInfo.mediaURL = localURL;
+        mediaInfo.remoteURL = [NSURL URLWithString:JSON[@"data"][0][@"url"]];
+        mediaInfo.filename = data[@"filename"];
+        mediaInfo.key = data[@"key"];
+
+        success([mediaInfo dictionary]);
     };
 
     FPUploadAssetFailureWithLocalURLBlock failureBlock = ^(NSError *error,
                                                            id JSON,
                                                            NSURL *localURL) {
-        NSDictionary *output = @{
-            @"FPPickerControllerMediaType":(NSString *)kUTTypeVideo,
-            @"FPPickerControllerMediaURL":localURL,
-            @"FPPickerControllerRemoteURL":@"",
-            @"FPPickerControllerFilename":filename
-        };
+        mediaInfo.mediaURL = localURL;
+        mediaInfo.filename = representation.filename;
 
-        failure(error, output);
+        failure(error, [mediaInfo dictionary]);
     };
 
     [FPLibrary uploadAsset:asset
