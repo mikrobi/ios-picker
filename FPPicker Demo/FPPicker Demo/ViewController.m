@@ -7,8 +7,11 @@
 //
 
 #import "ViewController.h"
+#import <AssetsLibrary/AssetsLibrary.h>
 
 @interface ViewController ()
+
+@property (nonatomic, retain) FPSaveController *fpSave;
 
 @end
 
@@ -114,7 +117,7 @@
     /*
      * Specify the maximum number of files (Optional) Default is 0, no limit
      */
-    fpController.maxFiles = 5;
+    fpController.maxFiles = 10;
 
     /*
      * Display it.
@@ -158,36 +161,45 @@
     /*
      * Create the object
      */
-    FPSaveController *fpSave = [FPSaveController new];
+    self.fpSave = [FPSaveController new];
 
     /*
      * Set the delegate
      */
-    fpSave.fpdelegate = self;
+    self.fpSave.fpdelegate = self;
 
     /*
      * Select and order the sources (Optional) Default is all sources
      */
-    //fpSave.sourceNames = [[NSArray alloc] initWithObjects: FPSourceDropbox, FPSourceFacebook, FPSourceBox, nil];
+    //self.fpSave.sourceNames = @[FPSourceDropbox, FPSourceFacebook, FPSourceBox];
 
     /*
      * Set the data and data type to be saved.
      */
-    fpSave.data = imgData;
-    fpSave.dataType = @"image/png";
+    self.fpSave.data = imgData;
+    self.fpSave.dataType = @"image/png";
 
     /*
      * Display it.
      */
-    UIPopoverController *popoverController = [[UIPopoverController alloc] initWithContentViewController:fpSave];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        UIPopoverController *popoverController = [[UIPopoverController alloc] initWithContentViewController:self.fpSave];
 
-    self.myPopoverController = popoverController;
-    self.myPopoverController.popoverContentSize = CGSizeMake(320, 520);
+        self.myPopoverController = popoverController;
+        self.myPopoverController.popoverContentSize = CGSizeMake(320, 520);
 
-    [self.myPopoverController presentPopoverFromRect:[sender frame]
-                                              inView:self.view
-                            permittedArrowDirections:UIPopoverArrowDirectionAny
-                                            animated:YES];
+        [self.myPopoverController presentPopoverFromRect:[sender frame]
+                                                  inView:self.view
+                                permittedArrowDirections:UIPopoverArrowDirectionAny
+                                                animated:YES];
+    }
+    else
+    {
+        [self presentViewController:self.fpSave
+                           animated:YES
+                         completion:nil];
+    }
 }
 
 #pragma mark - FPPickerControllerDelegate Methods
@@ -200,9 +212,15 @@
 {
     NSLog(@"FILE CHOSEN: %@", info);
 
-    self.imageView.image = info[@"FPPickerControllerOriginalImage"];
+    if (info[@"FPPickerControllerOriginalImage"])
+    {
+        self.imageView.image = info[@"FPPickerControllerOriginalImage"];
+    }
 
-    [self.myPopoverController dismissPopoverAnimated:YES];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        [self.myPopoverController dismissPopoverAnimated:YES];
+    }
 
     [self dismissViewControllerAnimated:YES
                              completion:nil];
@@ -212,7 +230,10 @@
 {
     NSLog(@"FILES CHOSEN: %@", results);
 
-    [self.myPopoverController dismissPopoverAnimated:YES];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        [self.myPopoverController dismissPopoverAnimated:YES];
+    }
 
     [self dismissViewControllerAnimated:YES
                              completion:nil];
@@ -224,6 +245,7 @@
     for (NSDictionary *data in results)
     {
         // Check if uploaded file is an image to add it to carousel
+
         if (data[@"FPPickerControllerOriginalImage"])
         {
             [images addObject:data[@"FPPickerControllerOriginalImage"]];
@@ -240,7 +262,10 @@
 {
     NSLog(@"FP Cancelled Open");
 
-    [self.myPopoverController dismissPopoverAnimated:YES];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        [self.myPopoverController dismissPopoverAnimated:YES];
+    }
 
     [self dismissViewControllerAnimated:YES
                              completion:nil];
@@ -250,7 +275,15 @@
 
 - (void)FPSaveControllerDidSave:(FPSaveController *)picker
 {
-    [self.myPopoverController dismissPopoverAnimated:YES];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        [self.myPopoverController dismissPopoverAnimated:YES];
+    }
+    else
+    {
+        [self.fpSave dismissViewControllerAnimated:YES
+                                        completion:nil];
+    }
 }
 
 - (void)FPSaveController:(FPSaveController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
@@ -261,7 +294,16 @@
 - (void)FPSaveControllerDidCancel:(FPSaveController *)picker
 {
     NSLog(@"FP Cancelled Save");
-    [self.myPopoverController dismissPopoverAnimated:YES];
+
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad)
+    {
+        [self.myPopoverController dismissPopoverAnimated:YES];
+    }
+    else
+    {
+        [self.fpSave dismissViewControllerAnimated:YES
+                                        completion:nil];
+    }
 }
 
 - (void)FPSaveController:(FPSaveController *)picker didError:(NSDictionary *)info

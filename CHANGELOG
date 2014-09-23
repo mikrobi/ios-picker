@@ -1,3 +1,28 @@
+v 3.2.8 - 09/23/2014
+- Fixed an UI reflow issue when rotating the device using a local source (FPLocalController).
+- Fixed a bug in FPPickerController that was preventing the delegate from being called in certain conditions.
+- Fixed a bug that was causing the upload button not to be visible in landscape mode when using a version of iOS between 7.1 and 8.0 (both non inclusive.)
+- Improved iPhone support on included iOS demo app.
+- FPPickerControllerSource is now returned when using either camera roll and camera sources.
+- FPPickerControllerRemoteURL is now consistently returned as a NSURL with any source.
+
+v 3.2.7 - 09/17/2014
+- Updated AFNetworking dependency to 2.4.1.
+- Fixed another case where FPPickerControllerRemoteURL was missing.
+
+v 3.2.6 - 09/16/2014
+- Fixed an UI locking issue during authentication when targetting iOS 8.
+
+v 3.2.5 - 09/15/2014
+- Fixed missing FPPickerControllerRemoteURL bug introduced in v3.2.4.
+
+v 3.2.4 - 09/12/2014
+- Remote sources now return the associated FPSource used in FPPickerControllerSource.
+- Local sources now return the associated ALAsset used in FPPickerControllerOriginalAsset.
+- Greatly reduced memory usage by returning a compressed version of the image in FPPickerControllerOriginalImage (this is particularly relevant when uploading a large number of images.)
+- Fixed a glitch in cell selection that could lead to a crash.
+- Fixed a minor UI glitch in iOS 8.
+
 v 3.2.3 - 08/28/2014
 - Improving compatibility with Instagram (issue #56 — @nickhart).
 
